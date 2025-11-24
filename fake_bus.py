@@ -16,37 +16,42 @@ async def load_routes():
                 yield route
 
 
-async def run_bus():
-    async for route in load_routes():
-        route_name = route.get("name", "not number")
-        coordinates = route.get("coordinates", [])
-        while True:
-            for lat, lng in coordinates:
-                    message = {
-                        "msgType": "Buses",
-                        "buses":
-                                [
-                                    {
-                                    "busId": route_name + '-0',
-                                    "lat": lat,
-                                    "lng": lng,
-                                    "route": route_name
-                                    }
-                                ]
-                    }
-            try:
-                async with aconnect_ws('ws://127.0.0.1:8000/ws') as ws:
+async def run_bus(url, bus_id, route_name, coordinates):
 
-                    while True:
-                        await ws.send_text(json.dumps(message, ensure_ascii=False))
-                        await asyncio.sleep(1)
-            except OSError as ose:
-                print(f'Connection attempt failed: {ose}')
+    while True:
+        for lat, lng in coordinates:
+                message = {
+                    "msgType": "Buses",
+                    "buses":
+                            [
+                                {
+                                "busId": bus_id + '-0',
+                                "lat": lat,
+                                "lng": lng,
+                                "route": route_name
+                                }
+                            ]
+                }
+        try:
+            async with aconnect_ws(url) as ws:
+
+                while True:
+                    await ws.send_text(json.dumps(message, ensure_ascii=False))
+                    await asyncio.sleep(1)
+        except OSError as ose:
+            print(f'Connection attempt failed: {ose}')
 
 
 async def main():
+
+    url = 'ws://127.0.0.1:8000/ws'
+    async for route in load_routes():
+        route_name = route.get("name", "not number")
+        bus_id = route_name + '-0'
+        coordinates = route.get("coordinates", [])
+        
     async with anyio.create_task_group() as tg:
-        tg.start_soon(run_bus)
+        tg.start_soon(run_bus, url, bus_id, route_name, coordinates)
 
 
 if __name__ == "__main__":
