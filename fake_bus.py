@@ -1,7 +1,7 @@
 import json
 import asyncio
 from itertools import cycle, islice
-from random import randint
+from random import randint, choice
 
 import anyio
 import zipfile
@@ -27,7 +27,7 @@ async def talk_to_browser(request):
             "msgType": "Buses",
             "buses": list(BUSES.values())
         }
-        print(list(BUSES.values()))
+        #print(list(BUSES.values()))
         await request.send_text(json.dumps(message))
         await asyncio.sleep(1)
 
@@ -46,6 +46,7 @@ async def run_bus(url, bus_id, route_name, coordinates, send_channel):
             "lng": lng,
             "route": route_name
         }
+        #print(send_channel)
         await send_channel.send(json.dumps(bus_info, ensure_ascii=False))
         await asyncio.sleep(1)
 
@@ -59,6 +60,7 @@ async def send_updates(server_address, receive_channel):
     try:
         async with aconnect_ws(server_address) as ws:
             async for value in receive_channel:
+                #print((receive_channel))
                 await ws.send_text(value)
     except (OSError, anyio.EndOfStream):
         print(f'Connection failed. Retrying in 5 seconds...')
@@ -68,22 +70,24 @@ async def send_updates(server_address, receive_channel):
 async def main():
 
     url = 'ws://127.0.0.1:8000/put_bus'
+    send_streams, receive_streams = [], []
+    # Пул каналов для ограничения исходящих WebSocket соединений с сервером
+    for _ in range(100):
+        send_stream, receive_stream = anyio.create_memory_object_stream(max_buffer_size=10)
+        send_streams.append(send_stream)
+        receive_streams.append(receive_stream)
 
     async with anyio.create_task_group() as tg:
-        
+        for channel in receive_streams:
+            tg.start_soon(send_updates, url, channel)
         async for route in load_routes():
             route_name = route.get("name", "not number")
             coordinates = route.get("coordinates", [])
-            # Создаем один канал для одного маршрута
-            send_channel, receive_channel = anyio.create_memory_object_stream(0)
-            
-            # Запускаем одну задачу для отправки данных на сервер для этого маршрута
-            tg.start_soon(send_updates, url, receive_channel)
 
-            # Запускаем несколько автобусов, которые пишут в один и тот же канал
-            for _ in range(3):
+            # Запускаем все автобусы из архива с разным началом маршрута для отправки в случайный канал
+            for _ in range(20):
                 bus_id = generate_bus_id(route_name, randint(1, 1000))
-                tg.start_soon(run_bus, url, bus_id, route_name, coordinates, send_channel)
+                tg.start_soon(run_bus, url, bus_id, route_name, coordinates, choice(send_streams))
 
 
 if __name__ == "__main__":
