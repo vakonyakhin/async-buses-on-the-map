@@ -2,12 +2,18 @@ import json
 import asyncio
 from itertools import cycle, islice
 from random import randint, choice
+from functools import wraps
+
 
 import anyio
+import logging
 import zipfile
-from httpx_ws import aconnect_ws
+from httpx_ws import aconnect_ws, WebSocketDisconnect, WebSocketNetworkError
+from httpx import HTTPStatusError, ConnectError
 import asyncclick as click
 
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 BUSES = {}
 
@@ -56,16 +62,43 @@ def generate_bus_id(route_id, bus_index):
     return f"{route_id}-{bus_index}"
 
 
-async def send_updates(server_address, receive_channel):
+def relaunch_on_disconnect(async_function):
+    """Декоратор для автоматического переподключения WebSocket."""
+    @wraps(async_function)
+    async def wrapper(*args, **kwargs):
+        initial_delay = 5
+        max_delay = 60
+        delay = initial_delay
+        while True:
+            try:
+                # Вызываем оригинальную функцию
+                await async_function(*args, **kwargs)
+                # Если функция завершилась без ошибок, выходим из цикла.
+                logging.info("WebSocket task finished gracefully.")
+                break
+            except (
+                ConnectError,
+                HTTPStatusError,
+                WebSocketDisconnect,
+                WebSocketNetworkError,
+                wsproto.utilities.LocalProtocolError
+                ):
+                logging.warning(f'Connection failed. Retrying in {delay} seconds...')
+                await asyncio.sleep(delay)
+                # Увеличиваем задержку для следующей попытки (экспоненциальная задержка)
+                delay = min(delay * 2, max_delay)
+            except Exception as e:
+                logging.error(f"An unexpected error occurred in websocket task: {e}", exc_info=True)
+                raise
+    return wrapper
 
-    try:
-        async with aconnect_ws(server_address) as ws:
-            async for value in receive_channel:
-                #print((receive_channel))
-                await ws.send_text(value)
-    except (OSError, anyio.EndOfStream):
-        print(f'Connection failed. Retrying in 5 seconds...')
-        await asyncio.sleep(5)
+@relaunch_on_disconnect
+async def send_updates(server_address, receive_channel):
+    async with aconnect_ws(server_address) as ws:
+        async for value in receive_channel:
+            #await ws._background_keepalive_ping(1.0, 5.0)
+            await ws.send_text(value)
+
 
 @click.command()
 @click.option("--server", default='ws://127.0.0.1:8000/', help="Server address")
