@@ -6,6 +6,7 @@ from random import randint, choice
 import anyio
 import zipfile
 from httpx_ws import aconnect_ws
+import asyncclick as click
 
 
 BUSES = {}
@@ -66,13 +67,18 @@ async def send_updates(server_address, receive_channel):
         print(f'Connection failed. Retrying in 5 seconds...')
         await asyncio.sleep(5)
 
+@click.command()
+@click.option("--server", default='ws://127.0.0.1:8000/', help="Server address")
+@click.option("--routes_number", default=1, help="Number of routes")
+@click.option("--buses_per_route", default=20, help="Number of buses per route")
+@click.option("--websockets_number", default=3, help="Number of websockets")
+@click.option("--verbosity", default='DEBUG', help="Verbosity")
+async def main(server, routes_number, buses_per_route, websockets_number, verbosity):
 
-async def main():
-
-    url = 'ws://127.0.0.1:8000/put_bus'
+    url = server + 'put_bus'
     send_streams, receive_streams = [], []
     # Пул каналов для ограничения исходящих WebSocket соединений с сервером
-    for _ in range(100):
+    for _ in range(websockets_number):
         send_stream, receive_stream = anyio.create_memory_object_stream(max_buffer_size=10)
         send_streams.append(send_stream)
         receive_streams.append(receive_stream)
@@ -85,7 +91,7 @@ async def main():
             coordinates = route.get("coordinates", [])
 
             # Запускаем все автобусы из архива с разным началом маршрута для отправки в случайный канал
-            for _ in range(20):
+            for _ in range(buses_per_route):
                 bus_id = generate_bus_id(route_name, randint(1, 1000))
                 tg.start_soon(run_bus, url, bus_id, route_name, coordinates, choice(send_streams))
 
