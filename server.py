@@ -47,8 +47,8 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.accept()
 
         while True:
-            data = await websocket.receive_text()
-            bus_data = Bus(**json.loads(data))
+            data = await websocket.receive_json()
+            bus_data = Bus(**data)
             BUSES[bus_data.busId] = bus_data
     except WebSocketDisconnect:
         BUSES.clear()
@@ -74,10 +74,10 @@ async def talk_to_browser(ws: WebSocket, bounds_storage: dict):
 
 async def listen_browser(ws: WebSocket, bounds_storage: dict):
     """Слушает сообщения от браузера и обновляет границы видимой области."""
-    async for data in ws.iter_text():
-        message = json.loads(data)
-        if message.get("msgType") == "newBounds":
-            window_bounds = WindowBounds(**message.get("data"))
+    async for data in ws.iter_json():
+        #message = data
+        if data.get("msgType") == "newBounds":
+            window_bounds = WindowBounds(**data.get("data"))
             window_bounds.update(bounds_storage)
 
 
