@@ -4,7 +4,7 @@ from itertools import cycle, islice
 from random import randint, choice
 from functools import wraps
 
-
+import wsproto
 import anyio
 import logging
 import zipfile
@@ -13,30 +13,15 @@ from httpx import HTTPStatusError, ConnectError
 import asyncclick as click
 
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-BUSES = {}
-
-
-async def load_routes():
-
+async def load_routes(routes_number):
+    max_routes = 0
     with zipfile.ZipFile('routes.zip', 'r') as zip_ref:
         for file in zip_ref.namelist():
-            if file.endswith('.json'):
+            if file.endswith('.json') and max_routes < routes_number:
+                max_routes += 1
                 route = json.loads(zip_ref.read(file))
 
                 yield route
-
-
-async def talk_to_browser(request):
-    while True:
-        message = {
-            "msgType": "Buses",
-            "buses": list(BUSES.values())
-        }
-        #print(list(BUSES.values()))
-        await request.send_text(json.dumps(message))
-        await asyncio.sleep(1)
 
 
 def generate_bus_id(route_id, bus_index):
@@ -44,6 +29,7 @@ def generate_bus_id(route_id, bus_index):
 
 
 async def run_bus(url, bus_id, route_name, coordinates, send_channel):
+async def run_bus(bus_id, route_name, coordinates, send_channel):
 
     iterator = islice(cycle(coordinates), randint(1, 50), None)
     for lat, lng in iterator:
@@ -53,13 +39,8 @@ async def run_bus(url, bus_id, route_name, coordinates, send_channel):
             "lng": lng,
             "route": route_name
         }
-        #print(send_channel)
         await send_channel.send(json.dumps(bus_info, ensure_ascii=False))
         await asyncio.sleep(1)
-
-
-def generate_bus_id(route_id, bus_index):
-    return f"{route_id}-{bus_index}"
 
 
 def relaunch_on_disconnect(async_function):
@@ -77,11 +58,11 @@ def relaunch_on_disconnect(async_function):
                 logging.info("WebSocket task finished gracefully.")
                 break
             except (
-                ConnectError,
-                HTTPStatusError,
-                WebSocketDisconnect,
-                WebSocketNetworkError,
-                wsproto.utilities.LocalProtocolError
+                    ConnectError,
+                    HTTPStatusError,
+                    WebSocketDisconnect,
+                    WebSocketNetworkError,
+                    wsproto.utilities.LocalProtocolError
                 ):
                 logging.warning(f'Connection failed. Retrying in {delay} seconds...')
                 await asyncio.sleep(delay)
@@ -102,12 +83,13 @@ async def send_updates(server_address, receive_channel):
 
 @click.command()
 @click.option("--server", default='ws://127.0.0.1:8000/', help="Server address")
-@click.option("--routes_number", default=1, help="Number of routes")
-@click.option("--buses_per_route", default=20, help="Number of buses per route")
+@click.option("--routes_number", default=3, help="Number of routes")
+@click.option("--buses_per_route", default=2, help="Number of buses per route")
 @click.option("--websockets_number", default=3, help="Number of websockets")
+@click.option("--emulator_id", default='0', help="префикс к busId на случай запуска нескольких экземпляров имитатора")
 @click.option("--verbosity", default='DEBUG', help="Verbosity")
-async def main(server, routes_number, buses_per_route, websockets_number, verbosity):
-
+async def main(server, routes_number, buses_per_route, websockets_number, emulator_id, verbosity):
+    logging.basicConfig(filename='app.log', level=verbosity, format='%(asctime)s - %(levelname)s - %(message)s')
     url = server + 'put_bus'
     send_streams, receive_streams = [], []
     # Пул каналов для ограничения исходящих WebSocket соединений с сервером
@@ -119,14 +101,17 @@ async def main(server, routes_number, buses_per_route, websockets_number, verbos
     async with anyio.create_task_group() as tg:
         for channel in receive_streams:
             tg.start_soon(send_updates, url, channel)
-        async for route in load_routes():
+
+        async for route in load_routes(routes_number):
+            
             route_name = route.get("name", "not number")
             coordinates = route.get("coordinates", [])
 
             # Запускаем все автобусы из архива с разным началом маршрута для отправки в случайный канал
             for _ in range(buses_per_route):
-                bus_id = generate_bus_id(route_name, randint(1, 1000))
+                bus_id = generate_bus_id(emulator_id, randint(1, 1000))
                 tg.start_soon(run_bus, url, bus_id, route_name, coordinates, choice(send_streams))
+                tg.start_soon(run_bus, bus_id, route_name, coordinates, choice(send_streams))
 
 
 if __name__ == "__main__":
