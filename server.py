@@ -3,13 +3,12 @@ from dataclasses import dataclass, asdict
 import os
 
 import anyio
-import asyncclick as click
 from pydantic import ValidationError
 import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
-from validation import BoundsData, ClientMessage, BusMessage
+from validation import ClientMessage, BusMessage
 
 
 @dataclass
@@ -49,17 +48,22 @@ BUSES = {}
 
 @app.websocket("/put_bus")
 async def websocket_endpoint(websocket: WebSocket):
+    logging.info("Client connected to /put_bus")
     try:
         await websocket.accept()
 
         while True:
-            data = await websocket.receive_json()            
-            bus_data = BusMessage(**data) # type: ignore
-            print(bus_data)
-            print('Validation success')
-            BUSES[bus_data.busId] = bus_data # type: ignore
+            data = await websocket.receive_json()
+            logging.debug(f"Received data: {data}")
+            bus_data = BusMessage(**data)
+            logging.debug(f"Parsed bus data: {bus_data}")
+            logging.info('Validation success')
+            BUSES[bus_data.busId] = bus_data
     except ValidationError as e:
-        print(f'Validation error: {e}') 
+        logging.warning(f'Validation error: {e}')
+        logging.exception(e)
+
+        await websocket.send_json({'error': str(e)})
     except WebSocketDisconnect:
         BUSES.clear()
 
@@ -84,7 +88,7 @@ async def talk_to_browser(ws: WebSocket, bounds_storage: dict):
             logging.debug(f'Message {message} was sent')
             await anyio.sleep(1)
     except RuntimeError:
-        print('Client already disconnected')
+        logging.warning('Client already disconnected')
 
 
 async def listen_browser(ws: WebSocket, bounds_storage: dict):
@@ -92,12 +96,16 @@ async def listen_browser(ws: WebSocket, bounds_storage: dict):
     async for data in ws.iter_json():
         try:
             message = ClientMessage(**data)
-            print('Validation success')
-            window_bounds = WindowBounds(**message.bounds.model_dump()) 
+            logging.debug('Validation success')
+            window_bounds = WindowBounds(**message.bounds.model_dump())
             logging.debug(f'Get new window bounds {window_bounds}')
             window_bounds.update(bounds_storage)
         except ValidationError as e:
-            print(f'Validation error: {e}') 
+            logging.warning(f'Validation error: {e}')
+            await ws.send_json({'Response': str(e)})
+        except json.decoder.JSONDecodeError as e:
+            logging.error('JSONDecodeError')
+            await ws.send_json({'Responce': str(e)})
 
 
 @app.websocket('/ws')
@@ -127,4 +135,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     log_level = os.getenv("LOG_LEVEL", "INFO")
     logging.basicConfig(level=log_level)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, reload=True)
