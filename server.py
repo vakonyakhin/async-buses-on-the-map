@@ -19,6 +19,12 @@ class WindowBounds:
     east_lng: float
 
     def is_inside(self, lat, lng) -> bool:
+        """
+        Проверяет, находится ли заданная точка (широта, долгота) внутри текущих границ.
+        :param lat: Широта точки.
+        :param lng: Долгота точки.
+        :return: True, если точка находится внутри границ, иначе False.
+        """
         if not self:
             return True  # Если границы не установлены, показываем все автобусы
         try:
@@ -30,6 +36,11 @@ class WindowBounds:
             return False
 
     def update(self, bounds_storage: dict):
+        """
+        Обновляет границы в хранилище границ.
+
+        :param bounds_storage: Словарь, содержащий текущие границы.
+        """
 
         bounds_storage["bounds"] = self
 
@@ -48,6 +59,26 @@ BUSES = {}
 
 @app.websocket("/put_bus")
 async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint для получения данных об автобусах.
+
+    Args:
+        websocket (WebSocket): WebSocket connection.
+
+    Принимаемые сообщения:
+    {
+        "busId": str,
+        "lat": float,
+        "lng": float,
+        "route": str
+    }
+
+    Отправляемые сообщения в случае ошибки валидации:
+    {'error': str}
+    
+    Returns:
+        None
+    """
     logging.info("Client connected to /put_bus")
     try:
         await websocket.accept()
@@ -69,7 +100,18 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def talk_to_browser(ws: WebSocket, bounds_storage: dict):
-    """Отправляет отфильтрованные по границам данные об автобусах в браузер."""
+    """Отправляет отфильтрованные по границам данные об автобусах в браузер.
+
+    Отправляемые сообщения:
+    {
+        "msgType": "Buses",
+        "buses": [
+            {"busId": str, "lat": float, "lng": float, "route": str},
+            ...
+        ]
+    }
+    """
+
     try:
         while True:
             bounds = bounds_storage.get("bounds")
@@ -92,6 +134,13 @@ async def talk_to_browser(ws: WebSocket, bounds_storage: dict):
 
 
 async def listen_browser(ws: WebSocket, bounds_storage: dict):
+    """
+    Слушает сообщения от браузера и обновляет границы видимой области.
+
+    Args:
+        ws (WebSocket): WebSocket connection.
+        bounds_storage (dict): Dictionary to store the bounds.
+    """
     """Слушает сообщения от браузера и обновляет границы видимой области."""
     async for data in ws.iter_json():
         try:
@@ -110,6 +159,15 @@ async def listen_browser(ws: WebSocket, bounds_storage: dict):
 
 @app.websocket('/ws')
 async def browser_websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint для обмена данными с браузером.
+
+    Args:
+        websocket (WebSocket): WebSocket connection.
+
+    Returns:
+        None
+    """
 
     await websocket.accept()
     logging.info("Browser connected.")

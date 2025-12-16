@@ -14,6 +14,12 @@ import asyncclick as click
 
 
 async def load_routes(routes_number):
+    """
+    Загружает маршруты из ZIP-архива.
+
+    Args:
+        routes_number (int): Количество маршрутов для загрузки.
+    """
     max_routes = 0
     with zipfile.ZipFile('routes.zip', 'r') as zip_ref:
         for file in zip_ref.namelist():
@@ -25,12 +31,29 @@ async def load_routes(routes_number):
 
 
 # для генерации уникального индекса каждого автобуса
-def generate_bus_id(route_id, bus_index):
+def generate_bus_id(route_id, bus_index) -> str:
+    """
+    Генерирует уникальный идентификатор автобуса.
+
+    Args:
+        route_id (str): Идентификатор маршрута.
+        bus_index (int): Индекс автобуса.
+
+    Returns:
+        str: Уникальный идентификатор автобуса.
+    """
     return f"{route_id}-{bus_index}"
 
 
 async def run_bus(url, bus_id, route_name, coordinates, send_channel):
-    # возможность запуска нескольких автобусов с разных стартовых точек
+    """
+    Эмулирует движение автобуса по заданным координатам и отправляет данные.
+    :param url: URL WebSocket сервера.
+    :param bus_id: Уникальный идентификатор автобуса.
+    :param route_name: Название маршрута.
+    :param coordinates: Список координат маршрута.
+    :param send_channel: Канал для отправки данных.
+    """
     iterator = islice(cycle(coordinates), randint(1, 50), None)
     for lat, lng in iterator:
         bus_info = {
@@ -45,7 +68,14 @@ async def run_bus(url, bus_id, route_name, coordinates, send_channel):
 
 
 def relaunch_on_disconnect(async_function):
-    """Декоратор для автоматического переподключения WebSocket."""
+    """
+    Декоратор для автоматического переподключения WebSocket в случае разрыва соединения.
+
+    Args:
+        async_function (callable): Асинхронная функция, представляющая WebSocket соединение.
+    Returns:
+        callable: Обернутая асинхронная функция с логикой переподключения.
+    """
     @wraps(async_function)
     async def wrapper(*args, **kwargs):
         initial_delay = 5
@@ -77,6 +107,13 @@ def relaunch_on_disconnect(async_function):
 
 @relaunch_on_disconnect
 async def send_updates(server_address, receive_channel):
+    """
+    Отправляет обновления на сервер через WebSocket.
+
+    Args:
+        server_address (str): Адрес WebSocket сервера.
+        receive_channel (anyio.abc.ReceiveStream): Канал для получения данных для отправки.
+    """
     async with aconnect_ws(server_address) as ws:
         logging.debug('Open websocket connection')
         async for value in receive_channel:
@@ -93,6 +130,20 @@ async def send_updates(server_address, receive_channel):
 @click.option("--emulator_id", default='0', help="префикс к busId на случай запуска нескольких экземпляров имитатора")
 @click.option("--verbosity", default='DEBUG', help="Verbosity")
 async def main(server, routes_number, buses_per_route, websockets_number, emulator_id, verbosity):
+    """
+    Основная функция для запуска эмулятора автобусов.
+
+    Args:
+        server (str): Адрес WebSocket сервера.
+        routes_number (int): Количество используемых маршрутов.
+        buses_per_route (int): Количество автобусов на маршрут.
+        websockets_number (int): Количество WebSocket соединений.
+        emulator_id (str): Префикс для идентификаторов автобусов.
+        verbosity (str): Уровень детализации логирования.
+
+    Returns:
+        None
+    """
     # Устанавливаем уровень логирования для httpx_ws на WARNING или выше
     logging.getLogger("httpx_ws").setLevel(logging.WARNING)
 
