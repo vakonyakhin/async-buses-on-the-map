@@ -20,17 +20,17 @@ async def load_routes(routes_number):
             if file.endswith('.json') and max_routes < routes_number:
                 max_routes += 1
                 route = json.loads(zip_ref.read(file))
-
+                logging.info('Get route from zip')
                 yield route
 
 
+# для генерации уникального индекса каждого автобуса
 def generate_bus_id(route_id, bus_index):
     return f"{route_id}-{bus_index}"
 
 
 async def run_bus(url, bus_id, route_name, coordinates, send_channel):
-async def run_bus(bus_id, route_name, coordinates, send_channel):
-
+    # возможность запуска нескольких автобусов с разных стартовых точек
     iterator = islice(cycle(coordinates), randint(1, 50), None)
     for lat, lng in iterator:
         bus_info = {
@@ -40,6 +40,7 @@ async def run_bus(bus_id, route_name, coordinates, send_channel):
             "route": route_name
         }
         await send_channel.send(json.dumps(bus_info, ensure_ascii=False))
+        logging.info('Send bus info to channel')
         await asyncio.sleep(1)
 
 
@@ -64,7 +65,7 @@ def relaunch_on_disconnect(async_function):
                     WebSocketNetworkError,
                     wsproto.utilities.LocalProtocolError
                 ):
-                logging.warning(f'Connection failed. Retrying in {delay} seconds...')
+                logging.error(f'Connection failed to server_address. Retrying in {delay} seconds...')
                 await asyncio.sleep(delay)
                 # Увеличиваем задержку для следующей попытки (экспоненциальная задержка)
                 delay = min(delay * 2, max_delay)
@@ -73,12 +74,15 @@ def relaunch_on_disconnect(async_function):
                 raise
     return wrapper
 
+
 @relaunch_on_disconnect
 async def send_updates(server_address, receive_channel):
     async with aconnect_ws(server_address) as ws:
+        logging.debug('Open websocket connection')
         async for value in receive_channel:
-            #await ws._background_keepalive_ping(1.0, 5.0)
             await ws.send_text(value)
+            logging.info('Send updates to server')
+            await asyncio.sleep(1)
 
 
 @click.command()
@@ -89,8 +93,11 @@ async def send_updates(server_address, receive_channel):
 @click.option("--emulator_id", default='0', help="префикс к busId на случай запуска нескольких экземпляров имитатора")
 @click.option("--verbosity", default='DEBUG', help="Verbosity")
 async def main(server, routes_number, buses_per_route, websockets_number, emulator_id, verbosity):
+    # Устанавливаем уровень логирования для httpx_ws на WARNING или выше
+    logging.getLogger("httpx_ws").setLevel(logging.WARNING)
+
     logging.basicConfig(filename='app.log', level=verbosity, format='%(asctime)s - %(levelname)s - %(message)s')
-    url = server + 'put_bus'
+    url = server + 'ws'
     send_streams, receive_streams = [], []
     # Пул каналов для ограничения исходящих WebSocket соединений с сервером
     for _ in range(websockets_number):
@@ -103,15 +110,13 @@ async def main(server, routes_number, buses_per_route, websockets_number, emulat
             tg.start_soon(send_updates, url, channel)
 
         async for route in load_routes(routes_number):
-            
             route_name = route.get("name", "not number")
             coordinates = route.get("coordinates", [])
-
+            logging.info(f'Get bus info')
             # Запускаем все автобусы из архива с разным началом маршрута для отправки в случайный канал
             for _ in range(buses_per_route):
                 bus_id = generate_bus_id(emulator_id, randint(1, 1000))
                 tg.start_soon(run_bus, url, bus_id, route_name, coordinates, choice(send_streams))
-                tg.start_soon(run_bus, bus_id, route_name, coordinates, choice(send_streams))
 
 
 if __name__ == "__main__":
