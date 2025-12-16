@@ -1,6 +1,6 @@
 # Автобусы на карте Москвы
 
-Веб-приложение показывает передвижение автобусов на карте Москвы.
+Веб-приложение показывает передвижение автобусов на карте Москвы. 
 
 <img src="screenshots/buses.gif">
 
@@ -36,6 +36,13 @@ pip install -r requirements.txt
 HOST=0.0.0.0 PORT=8080 LOG_LEVEL=DEBUG unicorn main:app
 
 ```
+
+значения по умолчанию:
+    host =  "127.0.0.1"
+    port = 8000
+    log_level = "INFO
+
+
 ## Запуск имитатора
 
 
@@ -94,8 +101,9 @@ python fake_bus.py --server ws://127.0.0.1:8000/ --routes_number 3 --buses_per_r
 }
 ```
 
+Валидация данных получаемых сервером происходит с помощью pydantic.
 
-## Используемые библиотеки
+## Используемые библиотеки на клиенте
 
 - [Leaflet](https://leafletjs.com/) — отрисовка карты
 - [loglevel](https://www.npmjs.com/package/loglevel) для логгирования
