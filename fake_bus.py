@@ -3,6 +3,7 @@ import asyncio
 from itertools import cycle, islice
 from random import randint, choice
 from functools import wraps
+from contextlib import suppress
 
 import wsproto
 import anyio
@@ -171,4 +172,5 @@ async def main(server, routes_number, buses_per_route, websockets_number, emulat
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    with suppress(KeyboardInterrupt):
+        asyncio.run(main())
